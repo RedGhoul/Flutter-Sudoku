@@ -12,8 +12,11 @@ import 'alerts/all.dart';
 import 'board_style.dart';
 import 'models/move_history.dart';
 import 'models/pencil_marks.dart';
+import 'models/statistics.dart';
 import 'splash_screen_page.dart';
 import 'styles.dart';
+import 'utils/storage_manager.dart';
+import 'utils/timer_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +68,12 @@ class HomePageState extends State<HomePage> {
   // Undo/Redo support
   late MoveHistory moveHistory;
   late PencilMarks pencilMarks;
+
+  // Timer and Statistics
+  late TimerController timerController;
+  late GameStatistics statistics;
+  late StorageManager storageManager;
+
   static String platform = () {
     if (kIsWeb) {
       return 'web-${defaultTargetPlatform.toString().replaceFirst("TargetPlatform.", "").toLowerCase()}';
@@ -84,6 +93,16 @@ class HomePageState extends State<HomePage> {
     // Initialize undo/redo support
     moveHistory = MoveHistory();
     pencilMarks = PencilMarks();
+
+    // Initialize timer
+    timerController = TimerController();
+
+    // Initialize storage and load statistics
+    StorageManager.create().then((manager) {
+      storageManager = manager;
+      statistics = manager.loadStatistics();
+      setState(() {});
+    });
 
     try {
       doWhenWindowReady(() {
@@ -116,6 +135,12 @@ class HomePageState extends State<HomePage> {
       changeTheme('set');
       changeAccentColor(currentAccentColor!, true);
     });
+  }
+
+  @override
+  void dispose() {
+    timerController.dispose();
+    super.dispose();
   }
 
   Future<void> getPrefs() async {
@@ -191,13 +216,31 @@ class HomePageState extends State<HomePage> {
       if (SudokuUtilities.isSolved(game)) {
         isButtonDisabled = !isButtonDisabled;
         gameOver = true;
+
+        // Stop timer and record statistics
+        timerController.pause();
+        final timeTaken = timerController.elapsedTime;
+        final moveCount = moveHistory.moveCount;
+
+        // Record game statistics
+        statistics.recordGame(
+          difficulty: currentDifficultyLevel!,
+          completed: true,
+          timeTaken: timeTaken,
+          moveCount: moveCount,
+        );
+        storageManager.saveStatistics(statistics);
+
         Timer(const Duration(milliseconds: 500), () {
           showAnimatedDialog<void>(
               animationType: DialogTransitionType.fadeScale,
               barrierDismissible: true,
               duration: const Duration(milliseconds: 350),
               context: context,
-              builder: (_) => const AlertGameOver()).whenComplete(() {
+              builder: (_) => AlertGameOver(
+                    timeTaken: timerController.formatTime(),
+                    moveCount: moveCount,
+                  )).whenComplete(() {
             if (AlertGameOver.newGame) {
               newGame();
               AlertGameOver.newGame = false;
@@ -287,6 +330,8 @@ class HomePageState extends State<HomePage> {
         setGame(2, difficulty);
         moveHistory.clear(); // Clear undo/redo history
         pencilMarks.clearAll(); // Clear all pencil marks
+        timerController.reset(); // Reset timer
+        timerController.start(); // Start timer
         isButtonDisabled =
             isButtonDisabled ? !isButtonDisabled : isButtonDisabled;
         gameOver = false;
@@ -300,6 +345,8 @@ class HomePageState extends State<HomePage> {
       game = copyGrid(gameCopy);
       moveHistory.clear(); // Clear undo/redo history
       pencilMarks.clearAll(); // Clear all pencil marks
+      timerController.reset(); // Reset timer
+      timerController.start(); // Start timer
       isButtonDisabled =
           isButtonDisabled ? !isButtonDisabled : isButtonDisabled;
       gameOver = false;
@@ -498,6 +545,22 @@ class HomePageState extends State<HomePage> {
                 },
               ),
               ListTile(
+                leading: Icon(Icons.bar_chart, color: Styles.foregroundColor),
+                title: Text('Statistics', style: customStyle),
+                onTap: () {
+                  Navigator.pop(context);
+                  Timer(
+                      const Duration(milliseconds: 200),
+                      () => showAnimatedDialog<void>(
+                            animationType: DialogTransitionType.fadeScale,
+                            barrierDismissible: true,
+                            duration: const Duration(milliseconds: 350),
+                            context: outerContext,
+                            builder: (_) => AlertStatistics(statistics: statistics),
+                          ));
+                },
+              ),
+              ListTile(
                 leading:
                     Icon(Icons.build_outlined, color: Styles.foregroundColor),
                 title: Text('Set Difficulty', style: customStyle),
@@ -645,7 +708,61 @@ class HomePageState extends State<HomePage> {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: createRows(),
+                  children: [
+                    // Timer display
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Pause/Play button
+                          IconButton(
+                            icon: Icon(
+                              timerController.isPaused
+                                  ? Icons.play_arrow
+                                  : Icons.pause,
+                              color: Styles.foregroundColor,
+                            ),
+                            tooltip:
+                                timerController.isPaused ? 'Resume' : 'Pause',
+                            onPressed: gameOver
+                                ? null
+                                : () {
+                                    setState(() {
+                                      if (timerController.isPaused) {
+                                        timerController.start();
+                                        isButtonDisabled = false;
+                                      } else {
+                                        timerController.pause();
+                                        isButtonDisabled = true;
+                                      }
+                                    });
+                                  },
+                          ),
+                          const SizedBox(width: 8),
+                          // Timer text
+                          ListenableBuilder(
+                            listenable: timerController,
+                            builder: (context, _) {
+                              return Text(
+                                timerController.formatTime(),
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Styles.foregroundColor,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures()
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Sudoku grid
+                    ...createRows(),
+                  ],
                 ),
               );
             }),

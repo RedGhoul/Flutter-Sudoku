@@ -6,7 +6,11 @@ class AlertGameOver extends StatelessWidget {
   static bool newGame = false;
   static bool restartGame = false;
 
-  const AlertGameOver({Key? key}) : super(key: key);
+  final String? timeTaken;
+  final int? moveCount;
+
+  const AlertGameOver({Key? key, this.timeTaken, this.moveCount})
+      : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -16,10 +20,44 @@ class AlertGameOver extends StatelessWidget {
       title: Text(
         'Game Over',
         style: TextStyle(color: Styles.foregroundColor),
+        textAlign: TextAlign.center,
       ),
-      content: Text(
-        'You successfully solved the Sudoku',
-        style: TextStyle(color: Styles.foregroundColor),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'You successfully solved the Sudoku!',
+            style: TextStyle(
+              color: Styles.foregroundColor,
+              fontSize: 16,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (timeTaken != null) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Time: $timeTaken',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Styles.primaryColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          if (moveCount != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Moves: $moveCount',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Styles.primaryColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
       ),
       actions: [
         TextButton(
