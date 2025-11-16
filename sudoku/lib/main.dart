@@ -10,6 +10,8 @@ import 'package:sudoku_solver_generator/sudoku_solver_generator.dart';
 
 import 'alerts/all.dart';
 import 'board_style.dart';
+import 'models/move_history.dart';
+import 'models/pencil_marks.dart';
 import 'splash_screen_page.dart';
 import 'styles.dart';
 
@@ -59,6 +61,10 @@ class HomePageState extends State<HomePage> {
   static String? currentDifficultyLevel;
   static String? currentTheme;
   static String? currentAccentColor;
+
+  // Undo/Redo support
+  late MoveHistory moveHistory;
+  late PencilMarks pencilMarks;
   static String platform = () {
     if (kIsWeb) {
       return 'web-${defaultTargetPlatform.toString().replaceFirst("TargetPlatform.", "").toLowerCase()}';
@@ -74,6 +80,11 @@ class HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+
+    // Initialize undo/redo support
+    moveHistory = MoveHistory();
+    pencilMarks = PencilMarks();
+
     try {
       doWhenWindowReady(() {
         appWindow.alignment = Alignment.center;
@@ -274,6 +285,8 @@ class HomePageState extends State<HomePage> {
     Future.delayed(const Duration(milliseconds: 200), () {
       setState(() {
         setGame(2, difficulty);
+        moveHistory.clear(); // Clear undo/redo history
+        pencilMarks.clearAll(); // Clear all pencil marks
         isButtonDisabled =
             isButtonDisabled ? !isButtonDisabled : isButtonDisabled;
         gameOver = false;
@@ -285,6 +298,8 @@ class HomePageState extends State<HomePage> {
   void restartGame() {
     setState(() {
       game = copyGrid(gameCopy);
+      moveHistory.clear(); // Clear undo/redo history
+      pencilMarks.clearAll(); // Clear all pencil marks
       isButtonDisabled =
           isButtonDisabled ? !isButtonDisabled : isButtonDisabled;
       gameOver = false;
@@ -377,11 +392,64 @@ class HomePageState extends State<HomePage> {
     setState(() {
       if (number == null) {
         return;
-      } else if (number == 0) {
-        game[index[0]][index[1]] = number;
-      } else {
-        game[index[0]][index[1]] = number;
+      }
+
+      final row = index[0];
+      final col = index[1];
+      final previousValue = game[row][col] == 0 ? null : game[row][col];
+      final newValue = number == 0 ? null : number;
+
+      // Record move in history
+      moveHistory.addMove(GameMove(
+        row: row,
+        col: col,
+        previousValue: previousValue,
+        newValue: newValue,
+        previousNotes: pencilMarks.getMarks(row, col).toList(),
+        newNotes: null, // Placing a number clears notes
+      ));
+
+      // Apply the move
+      game[row][col] = number;
+
+      if (number != 0) {
+        // Clear pencil marks when placing a number
+        pencilMarks.clearMarks(row, col);
+        pencilMarks.clearRelatedMarks(row, col, number);
         checkResult();
+      }
+    });
+  }
+
+  void undoMove() {
+    final move = moveHistory.undo();
+    if (move == null) return;
+
+    setState(() {
+      // Restore previous value
+      game[move.row][move.col] = move.previousValue ?? 0;
+
+      // Restore pencil marks
+      if (move.previousNotes != null) {
+        pencilMarks.setMarks(move.row, move.col, move.previousNotes!.toSet());
+      }
+    });
+  }
+
+  void redoMove() {
+    final move = moveHistory.redo();
+    if (move == null) return;
+
+    setState(() {
+      // Apply new value
+      game[move.row][move.col] = move.newValue ?? 0;
+
+      // Restore pencil marks or clear them
+      if (move.newNotes != null) {
+        pencilMarks.setMarks(move.row, move.col, move.newNotes!.toSet());
+      } else if (move.newValue != null && move.newValue != 0) {
+        pencilMarks.clearMarks(move.row, move.col);
+        pencilMarks.clearRelatedMarks(move.row, move.col, move.newValue!);
       }
     });
   }
@@ -581,14 +649,63 @@ class HomePageState extends State<HomePage> {
                 ),
               );
             }),
-            floatingActionButton: FloatingActionButton(
-              foregroundColor: Styles.primaryBackgroundColor,
-              backgroundColor: isFABDisabled
-                  ? Styles.primaryColor[900]
-                  : Styles.primaryColor,
-              onPressed:
-                  isFABDisabled ? null : () => showOptionModalSheet(context),
-              child: const Icon(Icons.menu_rounded),
+            floatingActionButton: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                // Redo button (highest)
+                Positioned(
+                  bottom: 140,
+                  right: 0,
+                  child: FloatingActionButton(
+                    mini: true,
+                    heroTag: 'redo',
+                    tooltip: 'Redo',
+                    onPressed: moveHistory.canRedo && !isButtonDisabled
+                        ? redoMove
+                        : null,
+                    backgroundColor: moveHistory.canRedo && !isButtonDisabled
+                        ? Styles.primaryColor
+                        : Styles.primaryColor[900],
+                    foregroundColor: Styles.primaryBackgroundColor,
+                    child: const Icon(Icons.redo, size: 20),
+                  ),
+                ),
+                // Undo button (middle)
+                Positioned(
+                  bottom: 80,
+                  right: 0,
+                  child: FloatingActionButton(
+                    mini: true,
+                    heroTag: 'undo',
+                    tooltip: 'Undo',
+                    onPressed: moveHistory.canUndo && !isButtonDisabled
+                        ? undoMove
+                        : null,
+                    backgroundColor: moveHistory.canUndo && !isButtonDisabled
+                        ? Styles.primaryColor
+                        : Styles.primaryColor[900],
+                    foregroundColor: Styles.primaryBackgroundColor,
+                    child: const Icon(Icons.undo, size: 20),
+                  ),
+                ),
+                // Menu button (bottom - existing)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: FloatingActionButton(
+                    heroTag: 'menu',
+                    tooltip: 'Menu',
+                    foregroundColor: Styles.primaryBackgroundColor,
+                    backgroundColor: isFABDisabled
+                        ? Styles.primaryColor[900]
+                        : Styles.primaryColor,
+                    onPressed: isFABDisabled
+                        ? null
+                        : () => showOptionModalSheet(context),
+                    child: const Icon(Icons.menu_rounded),
+                  ),
+                ),
+              ],
             )));
   }
 }
