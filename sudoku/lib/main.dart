@@ -77,6 +77,11 @@ class HomePageState extends State<HomePage> {
   // Pencil Marks Mode
   bool isPencilMode = false;
 
+  // Number Highlighting
+  int? selectedRow;
+  int? selectedCol;
+  int? selectedNumber;
+
   static String platform = () {
     if (kIsWeb) {
       return 'web-${defaultTargetPlatform.toString().replaceFirst("TargetPlatform.", "").toLowerCase()}';
@@ -419,6 +424,13 @@ class HomePageState extends State<HomePage> {
           onPressed: isButtonDisabled || gameCopy[k][i] != 0
               ? null
               : () {
+                  // Set selected cell for highlighting
+                  setState(() {
+                    selectedRow = k;
+                    selectedCol = i;
+                    selectedNumber = game[k][i];
+                  });
+
                   showAnimatedDialog<void>(
                           animationType: DialogTransitionType.fade,
                           barrierDismissible: true,
@@ -429,6 +441,13 @@ class HomePageState extends State<HomePage> {
                                 currentMarks: pencilMarks.getMarks(k, i),
                               ))
                       .whenComplete(() {
+                    // Clear selection after dialog closes
+                    setState(() {
+                      selectedRow = null;
+                      selectedCol = null;
+                      selectedNumber = null;
+                    });
+
                     if (isPencilMode) {
                       // Handle pencil marks
                       if (AlertNumbersState.pencilMarks != null) {
@@ -465,8 +484,14 @@ class HomePageState extends State<HomePage> {
               ? null
               : () => callback([k, i], 0),
           style: ButtonStyle(
-            backgroundColor:
-                MaterialStateProperty.all<Color>(buttonColor(k, i)),
+            backgroundColor: MaterialStateProperty.all<Color>(buttonColor(
+              k,
+              i,
+              selectedRow: selectedRow,
+              selectedCol: selectedCol,
+              selectedNumber: selectedNumber,
+              currentValue: game[k][i],
+            )),
             foregroundColor: MaterialStateProperty.resolveWith<Color>(
                 (Set<MaterialState> states) {
               if (states.contains(MaterialState.disabled)) {
@@ -475,7 +500,14 @@ class HomePageState extends State<HomePage> {
                     : Styles.foregroundColor;
               }
               return game[k][i] == 0
-                  ? buttonColor(k, i)
+                  ? buttonColor(
+                      k,
+                      i,
+                      selectedRow: selectedRow,
+                      selectedCol: selectedCol,
+                      selectedNumber: selectedNumber,
+                      currentValue: game[k][i],
+                    )
                   : Styles.secondaryColor;
             }),
             shape: MaterialStateProperty.all<OutlinedBorder>(

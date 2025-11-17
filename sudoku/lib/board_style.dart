@@ -6,7 +6,35 @@ import 'styles.dart';
 MaterialColor emptyColor(bool gameOver) =>
     gameOver ? Styles.primaryColor : Styles.secondaryColor;
 
-Color buttonColor(int k, int i) {
+Color buttonColor(
+  int k,
+  int i, {
+  int? selectedRow,
+  int? selectedCol,
+  int? selectedNumber,
+  int? currentValue,
+}) {
+  // Check for selected cell (highest priority)
+  if (selectedRow != null && k == selectedRow && i == selectedCol) {
+    return Styles.selectedCellColor;
+  }
+
+  // Check for same number highlighting
+  if (selectedNumber != null &&
+      selectedNumber != 0 &&
+      currentValue != null &&
+      currentValue == selectedNumber) {
+    return Styles.highlightColor;
+  }
+
+  // Check for same row/column highlighting (subtle)
+  if (selectedRow != null &&
+      selectedCol != null &&
+      (k == selectedRow || i == selectedCol)) {
+    return Styles.sameRowColumnColor;
+  }
+
+  // Default checkerboard pattern
   Color color;
   if (([0, 1, 2].contains(k) && [3, 4, 5].contains(i)) ||
       ([3, 4, 5].contains(k) && [0, 1, 2, 6, 7, 8].contains(i)) ||
