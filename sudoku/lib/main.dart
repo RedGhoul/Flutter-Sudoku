@@ -51,7 +51,7 @@ class HomePage extends StatefulWidget {
   State<StatefulWidget> createState() => HomePageState();
 }
 
-class HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool firstRun = true;
   bool gameOver = false;
   int timesCalled = 0;
@@ -82,6 +82,9 @@ class HomePageState extends State<HomePage> {
   int? selectedCol;
   int? selectedNumber;
 
+  // Auto-save
+  Timer? _autoSaveTimer;
+
   static String platform = () {
     if (kIsWeb) {
       return 'web-${defaultTargetPlatform.toString().replaceFirst("TargetPlatform.", "").toLowerCase()}';
@@ -98,6 +101,9 @@ class HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
 
+    // Add lifecycle observer
+    WidgetsBinding.instance.addObserver(this);
+
     // Initialize undo/redo support
     moveHistory = MoveHistory();
     pencilMarks = PencilMarks();
@@ -109,6 +115,15 @@ class HomePageState extends State<HomePage> {
     StorageManager.create().then((manager) {
       storageManager = manager;
       statistics = manager.loadStatistics();
+
+      // Set up auto-save timer (every 30 seconds)
+      _autoSaveTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        _saveGameState();
+      });
+
+      // Try to load saved game
+      _loadSavedGame();
+
       setState(() {});
     });
 
@@ -139,7 +154,10 @@ class HomePageState extends State<HomePage> {
         currentAccentColor = 'Blue';
         setPrefs('currentAccentColor');
       }
-      newGame(currentDifficultyLevel!);
+      // Only start new game if no saved game was loaded
+      if (firstRun) {
+        newGame(currentDifficultyLevel!);
+      }
       changeTheme('set');
       changeAccentColor(currentAccentColor!, true);
     });
@@ -147,8 +165,101 @@ class HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoSaveTimer?.cancel();
     timerController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // Save game when app goes to background
+      _saveGameState();
+      if (!gameOver && !timerController.isPaused) {
+        timerController.pause();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // Resume timer if game was active
+      if (!gameOver && timerController.isPaused && !isButtonDisabled) {
+        timerController.start();
+      }
+    }
+  }
+
+  Future<void> _saveGameState() async {
+    if (gameOver || firstRun) return; // Don't save completed/unstarted games
+
+    try {
+      final state = GameState(
+        currentGrid: game,
+        initialGrid: gameCopy,
+        solutionGrid: gameSolved,
+        difficulty: currentDifficultyLevel!,
+        pencilMarks: pencilMarks,
+        moveHistory: moveHistory,
+        elapsedTime: timerController.elapsedTime,
+        isPaused: timerController.isPaused,
+        isCompleted: gameOver,
+        moveCount: moveHistory.moveCount,
+      );
+
+      await storageManager.saveGameState(state);
+    } catch (e) {
+      // Fail silently - don't disrupt gameplay
+    }
+  }
+
+  Future<void> _loadSavedGame() async {
+    try {
+      final savedState = storageManager.loadGameState();
+
+      if (savedState != null && !savedState.isCompleted) {
+        // Show resume dialog
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (!mounted) return;
+
+          showAnimatedDialog<bool>(
+            animationType: DialogTransitionType.fadeScale,
+            barrierDismissible: false,
+            duration: const Duration(milliseconds: 350),
+            context: context,
+            builder: (_) => AlertResumeGame(savedState: savedState),
+          ).then((shouldResume) {
+            if (shouldResume == true) {
+              _resumeGame(savedState);
+            } else {
+              storageManager.clearGameState();
+            }
+          });
+        });
+      }
+    } catch (e) {
+      // Fail silently - corrupted save data
+      storageManager.clearGameState();
+    }
+  }
+
+  void _resumeGame(GameState state) {
+    setState(() {
+      game = state.currentGrid;
+      gameCopy = state.initialGrid;
+      gameSolved = state.solutionGrid;
+      currentDifficultyLevel = state.difficulty;
+      pencilMarks = state.pencilMarks;
+      moveHistory = state.moveHistory;
+
+      timerController.setTime(state.elapsedTime);
+      if (!state.isPaused) {
+        timerController.start();
+      } else {
+        isButtonDisabled = true;
+      }
+
+      gameOver = false;
+      firstRun = false;
+    });
   }
 
   Future<void> getPrefs() async {
@@ -238,6 +349,7 @@ class HomePageState extends State<HomePage> {
           moveCount: moveCount,
         );
         storageManager.saveStatistics(statistics);
+        storageManager.clearGameState(); // Clear saved game on completion
 
         Timer(const Duration(milliseconds: 500), () {
           showAnimatedDialog<void>(
@@ -340,6 +452,7 @@ class HomePageState extends State<HomePage> {
         pencilMarks.clearAll(); // Clear all pencil marks
         timerController.reset(); // Reset timer
         timerController.start(); // Start timer
+        storageManager.clearGameState(); // Clear any saved game
         isButtonDisabled =
             isButtonDisabled ? !isButtonDisabled : isButtonDisabled;
         gameOver = false;
