@@ -189,6 +189,11 @@ class Styles {
   static MaterialColor primaryColor = ionicBlue;
   static MaterialColor secondaryColor = lightRed;
 
+  // Highlight colors for number highlighting feature
+  static Color get highlightColor => primaryColor.withOpacity(0.2);
+  static Color get selectedCellColor => primaryColor.withOpacity(0.4);
+  static Color get sameRowColumnColor => primaryColor.withOpacity(0.1);
+
   static final Map<String, MaterialColor> accentColors = {
     'Cyan': ionicCyan,
     'Blue': ionicBlue,
