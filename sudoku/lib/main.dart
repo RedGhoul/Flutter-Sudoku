@@ -74,6 +74,9 @@ class HomePageState extends State<HomePage> {
   late GameStatistics statistics;
   late StorageManager storageManager;
 
+  // Pencil Marks Mode
+  bool isPencilMode = false;
+
   static String platform = () {
     if (kIsWeb) {
       return 'web-${defaultTargetPlatform.toString().replaceFirst("TargetPlatform.", "").toLowerCase()}';
@@ -353,6 +356,52 @@ class HomePageState extends State<HomePage> {
     });
   }
 
+  Widget buildCellContent(int row, int col) {
+    final value = game[row][col];
+    final marks = pencilMarks.getMarks(row, col);
+
+    if (value != 0) {
+      // Show number
+      return Text(
+        value.toString(),
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: buttonFontSize()),
+      );
+    } else if (marks.isNotEmpty) {
+      // Show pencil marks in 3x3 grid
+      return Padding(
+        padding: const EdgeInsets.all(2.0),
+        child: GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            childAspectRatio: 1,
+          ),
+          itemCount: 9,
+          itemBuilder: (context, index) {
+            final number = index + 1;
+            final hasMark = marks.contains(number);
+
+            return Center(
+              child: Text(
+                hasMark ? number.toString() : '',
+                style: TextStyle(
+                  fontSize: buttonSize() / 8,
+                  color: Styles.foregroundColor.withOpacity(0.6),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    } else {
+      // Empty cell
+      return const Text(' ');
+    }
+  }
+
   List<SizedBox> createButtons() {
     if (firstRun) {
       setGame(1);
@@ -375,10 +424,41 @@ class HomePageState extends State<HomePage> {
                           barrierDismissible: true,
                           duration: const Duration(milliseconds: 300),
                           context: context,
-                          builder: (_) => const AlertNumbersState())
+                          builder: (_) => AlertNumbersState(
+                                isPencilMode: isPencilMode,
+                                currentMarks: pencilMarks.getMarks(k, i),
+                              ))
                       .whenComplete(() {
-                    callback([k, i], AlertNumbersState.number);
-                    AlertNumbersState.number = null;
+                    if (isPencilMode) {
+                      // Handle pencil marks
+                      if (AlertNumbersState.pencilMarks != null) {
+                        setState(() {
+                          final previousNotes =
+                              pencilMarks.getMarks(k, i).toList();
+                          final newNotes =
+                              AlertNumbersState.pencilMarks!.toList();
+
+                          // Record pencil mark change in history
+                          moveHistory.addMove(GameMove(
+                            row: k,
+                            col: i,
+                            previousValue: game[k][i] == 0 ? null : game[k][i],
+                            newValue: game[k][i] == 0 ? null : game[k][i],
+                            previousNotes: previousNotes,
+                            newNotes: newNotes,
+                          ));
+
+                          // Apply pencil marks
+                          pencilMarks.setMarks(
+                              k, i, AlertNumbersState.pencilMarks!);
+                        });
+                        AlertNumbersState.pencilMarks = null;
+                      }
+                    } else {
+                      // Handle normal number placement
+                      callback([k, i], AlertNumbersState.number);
+                      AlertNumbersState.number = null;
+                    }
                   });
                 },
           onLongPress: isButtonDisabled || gameCopy[k][i] != 0
@@ -408,11 +488,7 @@ class HomePageState extends State<HomePage> {
               style: BorderStyle.solid,
             )),
           ),
-          child: Text(
-            game[k][i] != 0 ? game[k][i].toString() : ' ',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: buttonFontSize()),
-          ),
+          child: buildCellContent(k, i),
         ),
       );
     }
@@ -769,7 +845,36 @@ class HomePageState extends State<HomePage> {
             floatingActionButton: Stack(
               alignment: Alignment.bottomRight,
               children: [
-                // Redo button (highest)
+                // Pencil mode toggle (highest)
+                Positioned(
+                  bottom: 200,
+                  right: 0,
+                  child: FloatingActionButton(
+                    mini: true,
+                    heroTag: 'pencil',
+                    tooltip: isPencilMode ? 'Normal Mode' : 'Pencil Mode',
+                    onPressed: isButtonDisabled
+                        ? null
+                        : () {
+                            setState(() {
+                              isPencilMode = !isPencilMode;
+                            });
+                          },
+                    backgroundColor: isPencilMode
+                        ? Colors.orange
+                        : (isButtonDisabled
+                            ? Styles.primaryColor[900]
+                            : Styles.primaryColor),
+                    foregroundColor: isPencilMode
+                        ? Colors.black
+                        : Styles.primaryBackgroundColor,
+                    child: Icon(
+                      isPencilMode ? Icons.edit : Icons.edit_outlined,
+                      size: 20,
+                    ),
+                  ),
+                ),
+                // Redo button
                 Positioned(
                   bottom: 140,
                   right: 0,
